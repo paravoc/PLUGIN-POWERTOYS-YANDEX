@@ -1,7 +1,13 @@
 (() => {
   const browserRun = globalThis.BrowserRun || (globalThis.BrowserRun = {});
   const { DEFAULT_SETTINGS } = browserRun.constants;
-  const { normalize, parseScopedQuery, matchesQuery, computeScore } = browserRun.utils;
+  const {
+    normalize,
+    parseScopedQuery,
+    parseDirectNavigation,
+    matchesQuery,
+    computeScore
+  } = browserRun.utils;
   const { getSettings } = browserRun.storage;
 
   async function searchTabs(query) {
@@ -143,6 +149,26 @@
     ];
   }
 
+  function buildDirectNavigationResult(rawInput) {
+    const directMatch = parseDirectNavigation(rawInput);
+    if (!directMatch) {
+      return null;
+    }
+
+    return {
+      id: `direct:${directMatch.url}`,
+      type: "direct",
+      title: directMatch.title,
+      url: directMatch.url,
+      snippet: "Open the typed address directly without searching first.",
+      icon: null,
+      score: 500,
+      meta: {
+        sourceLabel: "Direct navigation"
+      }
+    };
+  }
+
   async function searchAllSources(query, settings) {
     const tasks = [];
 
@@ -170,6 +196,7 @@
   async function searchEverywhere(rawInput) {
     const settings = await getSettings();
     const parsed = parseScopedQuery(rawInput, settings.defaultSource);
+    const directResult = buildDirectNavigationResult(rawInput);
 
     if (!parsed.query) {
       return {
@@ -201,6 +228,10 @@
         break;
     }
 
+    if (directResult && parsed.mode === "all") {
+      results = [directResult, ...results.filter((item) => item.url !== directResult.url)];
+    }
+
     return {
       ok: true,
       effectiveMode: parsed.mode,
@@ -214,6 +245,7 @@
     searchBookmarks,
     searchHistory,
     buildWebResults,
+    buildDirectNavigationResult,
     searchAllSources,
     searchEverywhere
   };

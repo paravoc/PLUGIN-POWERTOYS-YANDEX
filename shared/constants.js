@@ -41,6 +41,7 @@
       tab: "Open tab",
       bookmark: "Bookmark",
       history: "History",
+      direct: "Direct link",
       web: "Web search",
       recent: "Recent query"
     }

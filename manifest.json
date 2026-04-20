@@ -3,6 +3,12 @@
   "name": "Browser Run Overlay",
   "version": "0.1.0",
   "description": "PowerToys Run style overlay search for Yandex Browser and Chromium.",
+  "icons": {
+    "16": "assets/icon16.png",
+    "32": "assets/icon32.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  },
   "permissions": [
     "storage",
     "tabs",
@@ -13,6 +19,13 @@
   ],
   "background": {
     "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Browser Run",
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "32": "assets/icon32.png"
+    }
   },
   "commands": {
     "toggle-overlay": {
@@ -26,7 +39,7 @@
   "options_page": "options.html",
   "web_accessible_resources": [
     {
-      "resources": [
+        "resources": [
         "overlay.css"
       ],
       "matches": [

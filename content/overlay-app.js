@@ -163,7 +163,7 @@
                   type="text"
                   spellcheck="false"
                   autocomplete="off"
-                  placeholder="Search anything... Use t:, b:, h:, w:"
+                  placeholder="Search anything... Use t:, b:, h:, w:, u:"
                   aria-label="Search"
                 />
                 <button class="br-icon-button" data-role="close-button" type="button" aria-label="Close overlay">Esc</button>
@@ -298,7 +298,7 @@
       this.resultsElement.innerHTML = `
         <div class="br-state-card">
           <div class="br-state-title">Start typing to search</div>
-          <div class="br-state-copy">Use <span>t:</span> for tabs, <span>b:</span> for bookmarks, <span>h:</span> for history, <span>w:</span> for web.</div>
+          <div class="br-state-copy">Use <span>t:</span> for tabs, <span>b:</span> for bookmarks, <span>h:</span> for history, <span>w:</span> for web, <span>u:</span> for direct URL.</div>
         </div>
       `;
       this.previewElement.innerHTML = `
