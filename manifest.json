@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Browser Run Overlay",
+  "version": "0.1.0",
+  "description": "PowerToys Run style overlay search for Yandex Browser and Chromium.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "bookmarks",
+    "history",
+    "scripting",
+    "activeTab"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "toggle-overlay": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Space",
+        "mac": "Command+Shift+Space"
+      },
+      "description": "Open or close the search overlay"
+    }
+  },
+  "options_page": "options.html",
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "overlay.css"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}
