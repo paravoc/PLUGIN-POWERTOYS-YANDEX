@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Browser Run Settings</title>
+    <title>Настройки Browser Run</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -257,59 +257,59 @@
     <main class="page">
       <section class="hero">
         <div class="eyebrow">Browser Run</div>
-        <h1>Overlay launcher settings</h1>
+        <h1>Настройки поискового оверлея</h1>
         <p>
-          Configure the default source, Enter behavior, history of recent queries and the visual theme for the in-page launcher.
+          Настройте источник поиска по умолчанию, поведение Enter, историю запросов и тему интерфейса для встроенного launcher-окна.
         </p>
       </section>
 
       <section class="panel">
-        <h2>Shortcut</h2>
+        <h2>Горячая клавиша</h2>
         <div class="shortcut-box">
           <div>
-            <div class="field-label">Current shortcut</div>
+            <div class="field-label">Текущее сочетание</div>
             <div class="shortcut-pill" id="shortcutDisplay">Ctrl+Shift+Space</div>
           </div>
-          <button id="openShortcutSettings" type="button">Open shortcut settings</button>
+          <button id="openShortcutSettings" type="button">Открыть настройки сочетаний</button>
         </div>
         <div class="hint">
-          The browser controls extension shortcuts. If the button does not open the page automatically, open <code>chrome://extensions/shortcuts</code> manually in Chromium-compatible browsers.
+          Горячими клавишами управляет сам браузер. Если страница не открылась автоматически, вручную откройте <code>chrome://extensions/shortcuts</code>.
         </div>
       </section>
 
       <form id="settingsForm" class="panel">
-        <h2>Search behavior</h2>
+        <h2>Поведение поиска</h2>
         <div class="grid">
           <label>
-            Default source
+            Источник по умолчанию
             <select id="defaultSource">
-              <option value="all">All sources</option>
-              <option value="tabs">Tabs</option>
-              <option value="bookmarks">Bookmarks</option>
-              <option value="history">History</option>
-              <option value="web">Web</option>
+              <option value="all">Все источники</option>
+              <option value="tabs">Вкладки</option>
+              <option value="bookmarks">Закладки</option>
+              <option value="history">История</option>
+              <option value="web">Веб</option>
             </select>
           </label>
 
           <label>
-            Enter behavior
+            Поведение Enter
             <select id="enterBehavior">
-              <option value="current-tab">Open in current tab</option>
-              <option value="new-tab">Open in new tab</option>
+              <option value="current-tab">Открывать в текущей вкладке</option>
+              <option value="new-tab">Открывать в новой вкладке</option>
             </select>
           </label>
 
           <label>
-            Theme
+            Тема
             <select id="theme">
-              <option value="auto">Auto</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
+              <option value="auto">Авто</option>
+              <option value="light">Светлая</option>
+              <option value="dark">Тёмная</option>
             </select>
           </label>
 
           <label>
-            Web search URL template
+            URL-шаблон для веб-поиска
             <input id="webSearchUrl" type="text" placeholder="https://yandex.ru/search/?text=%s" />
           </label>
         </div>
@@ -318,55 +318,55 @@
           <label class="checkbox-item">
             <input id="enableTabsSearch" type="checkbox" />
             <span class="checkbox-copy">
-              <strong>Search open tabs</strong>
-              <span>Match by tab title and URL across browser windows.</span>
+              <strong>Искать по открытым вкладкам</strong>
+              <span>Совпадения по названию вкладки и URL во всех окнах браузера.</span>
             </span>
           </label>
 
           <label class="checkbox-item">
             <input id="enableBookmarksSearch" type="checkbox" />
             <span class="checkbox-copy">
-              <strong>Search bookmarks</strong>
-              <span>Include saved bookmarks and folders with URLs.</span>
+              <strong>Искать по закладкам</strong>
+              <span>Включать сохранённые закладки и элементы с URL.</span>
             </span>
           </label>
 
           <label class="checkbox-item">
             <input id="enableHistorySearch" type="checkbox" />
             <span class="checkbox-copy">
-              <strong>Search browsing history</strong>
-              <span>Use browser history items ranked by text match and visit count.</span>
+              <strong>Искать по истории</strong>
+              <span>Использовать посещённые страницы с ранжированием по совпадению и частоте посещения.</span>
             </span>
           </label>
 
           <label class="checkbox-item">
             <input id="enableWebSearch" type="checkbox" />
             <span class="checkbox-copy">
-              <strong>Enable web search pseudo-result</strong>
-              <span>Add a quick action that opens the configured search engine with the current query.</span>
+              <strong>Включить веб-поиск</strong>
+              <span>Добавлять быстрый результат, который откроет поисковую систему с текущим запросом.</span>
             </span>
           </label>
 
           <label class="checkbox-item">
             <input id="rememberQueries" type="checkbox" />
             <span class="checkbox-copy">
-              <strong>Remember recent queries</strong>
-              <span>Show recent searches when the input is empty.</span>
+              <strong>Запоминать запросы</strong>
+              <span>Показывать недавние запросы, когда строка поиска пустая.</span>
             </span>
           </label>
 
           <label class="checkbox-item">
             <input id="closeOnOpen" type="checkbox" />
             <span class="checkbox-copy">
-              <strong>Close overlay after opening a result</strong>
-              <span>Recommended for launcher-style interaction.</span>
+              <strong>Закрывать окно после открытия результата</strong>
+              <span>Подходит для сценария в стиле launcher.</span>
             </span>
           </label>
         </div>
 
         <div class="actions">
-          <button class="button-primary" type="submit">Save settings</button>
-          <button id="resetButton" type="button">Reset defaults</button>
+          <button class="button-primary" type="submit">Сохранить настройки</button>
+          <button id="resetButton" type="button">Сбросить по умолчанию</button>
         </div>
         <div class="status" id="statusMessage" aria-live="polite"></div>
       </form>

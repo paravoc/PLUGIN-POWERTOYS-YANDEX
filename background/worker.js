@@ -41,7 +41,7 @@
     if (!message || typeof message.type !== "string") {
       return {
         ok: false,
-        error: "Invalid message payload."
+        error: "Некорректный запрос к расширению."
       };
     }
 
@@ -63,7 +63,7 @@
       default:
         return {
           ok: false,
-          error: `Unknown message type: ${message.type}`
+          error: `Неизвестный тип сообщения: ${message.type}`
         };
     }
   }
@@ -110,7 +110,7 @@
     if (!result || typeof result.url !== "string") {
       return {
         ok: false,
-        error: "Result payload is invalid."
+        error: "Некорректные данные результата."
       };
     }
 
@@ -138,7 +138,7 @@
       if (typeof destinationTabId !== "number") {
         return {
           ok: false,
-          error: "Could not determine the active tab."
+          error: "Не удалось определить активную вкладку."
         };
       }
 

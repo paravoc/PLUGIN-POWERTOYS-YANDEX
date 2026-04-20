@@ -67,7 +67,7 @@
     return {
       raw: candidate,
       url: normalizedUrl,
-      title: prefix ? `Open ${candidate}` : `Open ${normalizedUrl}`,
+      title: prefix ? `Открыть ${candidate}` : `Открыть ${normalizedUrl}`,
       explicit: Boolean(prefix)
     };
   }

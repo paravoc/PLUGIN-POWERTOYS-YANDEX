@@ -42,20 +42,20 @@ form.addEventListener("submit", async (event) => {
   };
 
   await chrome.storage.local.set({ settings });
-  showStatus("Settings saved.");
+  showStatus("Настройки сохранены.");
 });
 
 resetButton.addEventListener("click", async () => {
   await chrome.storage.local.set({ settings: DEFAULT_SETTINGS });
   await loadSettingsIntoForm();
-  showStatus("Defaults restored.");
+  showStatus("Настройки сброшены.");
 });
 
 openShortcutSettingsButton.addEventListener("click", async () => {
   try {
     await chrome.tabs.create({ url: "chrome://extensions/shortcuts" });
   } catch (_error) {
-    showStatus("Open chrome://extensions/shortcuts manually in the address bar.");
+    showStatus("Откройте chrome://extensions/shortcuts вручную в адресной строке.");
   }
 });
 
@@ -89,10 +89,10 @@ async function renderShortcut() {
     if (toggleCommand && toggleCommand.shortcut) {
       shortcutDisplay.textContent = toggleCommand.shortcut;
     } else {
-      shortcutDisplay.textContent = "Not assigned";
+      shortcutDisplay.textContent = "Не назначено";
     }
   } catch (_error) {
-    shortcutDisplay.textContent = "Unavailable";
+    shortcutDisplay.textContent = "Недоступно";
   }
 }
 

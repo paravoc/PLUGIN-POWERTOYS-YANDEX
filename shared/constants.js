@@ -30,20 +30,20 @@
       all: "all"
     },
     SOURCE_LABELS: {
-      all: "All",
-      tabs: "Tabs",
-      bookmarks: "Bookmarks",
-      history: "History",
-      web: "Web",
-      recent: "Recent"
+      all: "Все",
+      tabs: "Вкладки",
+      bookmarks: "Закладки",
+      history: "История",
+      web: "Веб",
+      recent: "Недавние"
     },
     TYPE_LABELS: {
-      tab: "Open tab",
-      bookmark: "Bookmark",
-      history: "History",
-      direct: "Direct link",
-      web: "Web search",
-      recent: "Recent query"
+      tab: "Вкладка",
+      bookmark: "Закладка",
+      history: "История",
+      direct: "Ссылка",
+      web: "Веб-поиск",
+      recent: "Недавний запрос"
     }
   };
 })();

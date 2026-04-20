@@ -12,6 +12,7 @@
     findIndexedResultElement
   } = browserRun.utils;
   const { copyTextToClipboard } = browserRun.clipboard;
+  const PREVIEW_PAGE_SIZE = 10;
 
   class BrowserRunOverlay {
     constructor() {
@@ -25,8 +26,13 @@
       this.summaryElement = null;
       this.closeButton = null;
       this.loadingElement = null;
+      this.previewListElement = null;
+      this.previewPageLabelElement = null;
+      this.previewPrevButton = null;
+      this.previewNextButton = null;
       this.results = [];
       this.selectedIndex = -1;
+      this.previewPageStart = 0;
       this.settings = { ...DEFAULT_SETTINGS };
       this.recentQueries = [];
       this.currentMode = this.settings.defaultSource;
@@ -39,6 +45,7 @@
       this.handleInputEvent = this.handleInputEvent.bind(this);
       this.handleInputKeyDown = this.handleInputKeyDown.bind(this);
       this.handleResultsClick = this.handleResultsClick.bind(this);
+      this.handlePreviewListClick = this.handlePreviewListClick.bind(this);
       this.handleResultsMouseMove = this.handleResultsMouseMove.bind(this);
       this.handleDocumentKeyDown = this.handleDocumentKeyDown.bind(this);
     }
@@ -92,8 +99,13 @@
       this.summaryElement = null;
       this.closeButton = null;
       this.loadingElement = null;
+      this.previewListElement = null;
+      this.previewPageLabelElement = null;
+      this.previewPrevButton = null;
+      this.previewNextButton = null;
       this.results = [];
       this.selectedIndex = -1;
+      this.previewPageStart = 0;
     }
 
     mount(cssText) {
@@ -116,6 +128,10 @@
       this.input = this.shadow.querySelector("[data-role='search-input']");
       this.resultsElement = this.shadow.querySelector("[data-role='results']");
       this.previewElement = this.shadow.querySelector("[data-role='preview']");
+      this.previewListElement = this.shadow.querySelector("[data-role='preview-list']");
+      this.previewPageLabelElement = this.shadow.querySelector("[data-role='preview-page-label']");
+      this.previewPrevButton = this.shadow.querySelector("[data-role='preview-prev']");
+      this.previewNextButton = this.shadow.querySelector("[data-role='preview-next']");
       this.modeBadgeElement = this.shadow.querySelector("[data-role='mode-badge']");
       this.summaryElement = this.shadow.querySelector("[data-role='summary']");
       this.closeButton = this.shadow.querySelector("[data-role='close-button']");
@@ -126,8 +142,11 @@
       this.input.addEventListener("keydown", this.handleInputKeyDown);
       this.resultsElement.addEventListener("click", this.handleResultsClick);
       this.resultsElement.addEventListener("mousemove", this.handleResultsMouseMove);
+      this.previewListElement.addEventListener("click", this.handlePreviewListClick);
       this.closeButton.addEventListener("click", () => this.close());
       document.addEventListener("keydown", this.handleDocumentKeyDown, true);
+      this.previewPrevButton.addEventListener("click", () => this.shiftPreviewPage(-1));
+      this.previewNextButton.addEventListener("click", () => this.shiftPreviewPage(1));
 
       this.shadow.querySelector("[data-role='open-current']").addEventListener("click", () => {
         this.openSelected(this.defaultDisposition());
@@ -146,15 +165,15 @@
       const wrapper = document.createElement("div");
       wrapper.innerHTML = `
         <div class="br-backdrop" data-role="backdrop">
-          <section class="br-shell" role="dialog" aria-modal="true" aria-label="Browser Run overlay">
+          <section class="br-shell" role="dialog" aria-modal="true" aria-label="Окно быстрого поиска Browser Run">
             <header class="br-header">
               <div class="br-brand">
                 <div class="br-brand-mark">BR</div>
                 <div class="br-brand-copy">
                   <div class="br-title">Browser Run</div>
-                  <div class="br-subtitle">Command palette for tabs, bookmarks and history</div>
+                  <div class="br-subtitle">Быстрый поиск по вкладкам, закладкам и истории</div>
                 </div>
-                <div class="br-mode-badge" data-role="mode-badge">All</div>
+                <div class="br-mode-badge" data-role="mode-badge">Все</div>
               </div>
               <div class="br-search-row">
                 <input
@@ -163,36 +182,49 @@
                   type="text"
                   spellcheck="false"
                   autocomplete="off"
-                  placeholder="Search anything... Use t:, b:, h:, w:, u:"
-                  aria-label="Search"
+                  placeholder="Ищи что угодно... t:, b:, h:, w:, u:"
+                  aria-label="Поиск"
                 />
-                <button class="br-icon-button" data-role="close-button" type="button" aria-label="Close overlay">Esc</button>
+                <button class="br-icon-button" data-role="close-button" type="button" aria-label="Закрыть окно">Esc</button>
               </div>
             </header>
 
             <div class="br-content">
               <section class="br-results-pane">
-                <div class="br-loading" data-role="loading" hidden>Searching...</div>
-                <div class="br-results" data-role="results" role="listbox" aria-label="Search results"></div>
+                <div class="br-loading" data-role="loading" hidden>Идёт поиск...</div>
+                <div class="br-results" data-role="results" role="listbox" aria-label="Результаты поиска"></div>
               </section>
 
               <aside class="br-preview-pane">
                 <div class="br-preview" data-role="preview"></div>
+                <section class="br-preview-gallery">
+                  <div class="br-preview-gallery-header">
+                    <div class="br-preview-gallery-copy">
+                      <div class="br-preview-gallery-title">Примеры страниц</div>
+                      <div class="br-preview-gallery-subtitle" data-role="preview-page-label">1-10</div>
+                    </div>
+                    <div class="br-preview-gallery-controls">
+                      <button class="br-icon-button br-preview-nav" data-role="preview-prev" type="button" aria-label="Предыдущие результаты">↑</button>
+                      <button class="br-icon-button br-preview-nav" data-role="preview-next" type="button" aria-label="Следующие результаты">↓</button>
+                    </div>
+                  </div>
+                  <div class="br-preview-list" data-role="preview-list"></div>
+                </section>
                 <div class="br-preview-actions">
-                  <button class="br-action-button" data-role="open-current" type="button">Open</button>
-                  <button class="br-action-button" data-role="open-new" type="button">New tab</button>
-                  <button class="br-action-button" data-role="copy-link" type="button">Copy link</button>
+                  <button class="br-action-button" data-role="open-current" type="button">Открыть</button>
+                  <button class="br-action-button" data-role="open-new" type="button">Новая вкладка</button>
+                  <button class="br-action-button" data-role="copy-link" type="button">Копировать ссылку</button>
                 </div>
               </aside>
             </div>
 
             <footer class="br-footer">
-              <div class="br-summary" data-role="summary">Ready</div>
+              <div class="br-summary" data-role="summary">Готово</div>
               <div class="br-hints">
-                <span>Enter open</span>
-                <span>Ctrl+Enter new tab</span>
-                <span>Shift+Enter background</span>
-                <span>Esc close</span>
+                <span>Enter открыть</span>
+                <span>Ctrl+Enter новая вкладка</span>
+                <span>Shift+Enter фон</span>
+                <span>Esc закрыть</span>
               </div>
             </footer>
           </section>
@@ -247,7 +279,7 @@
           this.results = [];
           this.selectedIndex = -1;
           this.loadingElement.hidden = true;
-          this.renderError(response && response.error ? response.error : "Search failed.");
+          this.renderError(response && response.error ? response.error : "Не удалось выполнить поиск.");
           return;
         }
 
@@ -258,6 +290,7 @@
 
         this.results = Array.isArray(response.results) ? response.results : [];
         this.selectedIndex = this.results.length > 0 ? 0 : -1;
+        this.previewPageStart = 0;
         this.renderResults();
       } catch (error) {
         if (!this.isOpen || sequence !== this.searchSequence) {
@@ -267,7 +300,7 @@
         this.loadingElement.hidden = true;
         this.results = [];
         this.selectedIndex = -1;
-        this.renderError(error instanceof Error ? error.message : "Search failed.");
+        this.renderError(error instanceof Error ? error.message : "Не удалось выполнить поиск.");
       }
     }
 
@@ -280,14 +313,15 @@
           type: "recent",
           title: query,
           url: "",
-          snippet: "Repeat recent query",
+          snippet: "Повторить недавний запрос",
           icon: null,
           score: 100 - index,
           meta: {
             query,
-            sourceLabel: "Recent query"
+            sourceLabel: "Недавний запрос"
           }
         }));
+        this.previewPageStart = 0;
         this.selectedIndex = 0;
         this.renderResults();
         return;
@@ -295,52 +329,56 @@
 
       this.results = [];
       this.selectedIndex = -1;
+      this.previewPageStart = 0;
       this.resultsElement.innerHTML = `
         <div class="br-state-card">
-          <div class="br-state-title">Start typing to search</div>
-          <div class="br-state-copy">Use <span>t:</span> for tabs, <span>b:</span> for bookmarks, <span>h:</span> for history, <span>w:</span> for web, <span>u:</span> for direct URL.</div>
+          <div class="br-state-title">Начните вводить запрос</div>
+          <div class="br-state-copy">Используйте <span>t:</span> для вкладок, <span>b:</span> для закладок, <span>h:</span> для истории, <span>w:</span> для веба, <span>u:</span> для прямой ссылки.</div>
         </div>
       `;
       this.previewElement.innerHTML = `
         <div class="br-preview-empty">
-          <div class="br-preview-title">Quick start</div>
-          <div class="br-preview-copy">The first result is selected automatically. Use arrow keys to switch results and Enter to open.</div>
+          <div class="br-preview-title">Быстрый старт</div>
+          <div class="br-preview-copy">Первый результат выбирается автоматически. Используйте стрелки для навигации и Enter для открытия.</div>
         </div>
       `;
-      this.summaryElement.textContent = "Type to search local browser sources";
+      this.renderPreviewList();
+      this.summaryElement.textContent = "Начните ввод, чтобы искать по браузеру";
     }
 
     renderError(message) {
       this.resultsElement.innerHTML = `
         <div class="br-state-card">
-          <div class="br-state-title">Search error</div>
+          <div class="br-state-title">Ошибка поиска</div>
           <div class="br-state-copy">${escapeHtml(message)}</div>
         </div>
       `;
       this.previewElement.innerHTML = `
         <div class="br-preview-empty">
-          <div class="br-preview-title">No preview available</div>
-          <div class="br-preview-copy">Check permissions or try another query.</div>
+          <div class="br-preview-title">Предпросмотр недоступен</div>
+          <div class="br-preview-copy">Проверьте разрешения или попробуйте другой запрос.</div>
         </div>
       `;
-      this.summaryElement.textContent = "Search error";
+      this.renderPreviewList();
+      this.summaryElement.textContent = "Ошибка поиска";
     }
 
     renderResults() {
       if (!this.results.length) {
         this.resultsElement.innerHTML = `
           <div class="br-state-card">
-            <div class="br-state-title">No results</div>
-            <div class="br-state-copy">Try another query or switch the source prefix.</div>
+            <div class="br-state-title">Ничего не найдено</div>
+            <div class="br-state-copy">Попробуйте другой запрос или смените префикс источника.</div>
           </div>
         `;
         this.previewElement.innerHTML = `
           <div class="br-preview-empty">
-            <div class="br-preview-title">Nothing selected</div>
-            <div class="br-preview-copy">No matching items were found in the current source.</div>
+            <div class="br-preview-title">Нет выбранного результата</div>
+            <div class="br-preview-copy">В текущем источнике нет совпадений.</div>
           </div>
         `;
-        this.summaryElement.textContent = `No results in ${SOURCE_LABELS[this.currentMode] || "current source"}`;
+        this.renderPreviewList();
+        this.summaryElement.textContent = `Нет результатов: ${SOURCE_LABELS[this.currentMode] || "текущий источник"}`;
         return;
       }
 
@@ -349,7 +387,8 @@
         .join("");
 
       this.renderPreview();
-      this.summaryElement.textContent = `${this.results.length} result${this.results.length === 1 ? "" : "s"} in ${SOURCE_LABELS[this.currentMode] || "current source"}`;
+      this.renderPreviewList();
+      this.summaryElement.textContent = `${this.formatResultCount(this.results.length)} в режиме «${SOURCE_LABELS[this.currentMode] || "Источник"}»`;
     }
 
     renderResultItem(result, index, isSelected) {
@@ -359,7 +398,7 @@
 
       const metaLine = result.url
         ? `<div class="br-result-url">${escapeHtml(shortenUrl(result.url))}</div>`
-        : `<div class="br-result-url br-result-url-muted">${escapeHtml(TYPE_LABELS[result.type] || "Result")}</div>`;
+        : `<div class="br-result-url br-result-url-muted">${escapeHtml(TYPE_LABELS[result.type] || "Результат")}</div>`;
 
       const snippet = result.snippet
         ? `<div class="br-result-snippet">${escapeHtml(result.snippet)}</div>`
@@ -375,11 +414,11 @@
         >
           <div class="br-result-icon">${iconMarkup}</div>
           <div class="br-result-copy">
-            <div class="br-result-title">${escapeHtml(result.title || "Untitled result")}</div>
+            <div class="br-result-title">${escapeHtml(result.title || "Без названия")}</div>
             ${metaLine}
             ${snippet}
           </div>
-          <div class="br-result-type">${escapeHtml(TYPE_LABELS[result.type] || "Result")}</div>
+          <div class="br-result-type">${escapeHtml(TYPE_LABELS[result.type] || "Результат")}</div>
         </button>
       `;
     }
@@ -390,8 +429,8 @@
       if (!result) {
         this.previewElement.innerHTML = `
           <div class="br-preview-empty">
-            <div class="br-preview-title">Nothing selected</div>
-            <div class="br-preview-copy">Move through results with ArrowUp and ArrowDown.</div>
+            <div class="br-preview-title">Нет выбранного результата</div>
+            <div class="br-preview-copy">Перемещайтесь по списку стрелками вверх и вниз.</div>
           </div>
         `;
         return;
@@ -400,11 +439,11 @@
       const lines = [];
 
       if (result.type === "tab" && result.meta && result.meta.active) {
-        lines.push("Active tab");
+        lines.push("Активная вкладка");
       }
 
       if (result.type === "recent") {
-        lines.push("Press Enter to repeat this query");
+        lines.push("Нажмите Enter, чтобы повторить запрос");
       } else if (result.url) {
         lines.push(result.url);
       }
@@ -415,15 +454,58 @@
 
       this.previewElement.innerHTML = `
         <div class="br-preview-card">
-          <div class="br-preview-type">${escapeHtml(TYPE_LABELS[result.type] || "Result")}</div>
-          <div class="br-preview-title">${escapeHtml(result.title || "Untitled result")}</div>
+          <div class="br-preview-type">${escapeHtml(TYPE_LABELS[result.type] || "Результат")}</div>
+          <div class="br-preview-title">${escapeHtml(result.title || "Без названия")}</div>
           <div class="br-preview-url">${escapeHtml(shortenUrl(result.url || lines[0] || ""))}</div>
-          <div class="br-preview-copy">${escapeHtml(result.snippet || "Open this result using the selected action.")}</div>
+          <div class="br-preview-copy">${escapeHtml(result.snippet || "Откройте результат выбранным действием.")}</div>
           <div class="br-preview-meta">
             ${lines.map((line) => `<span>${escapeHtml(line)}</span>`).join("")}
           </div>
         </div>
       `;
+    }
+
+    renderPreviewList() {
+      if (!this.previewListElement || !this.previewPageLabelElement) {
+        return;
+      }
+
+      if (!this.results.length) {
+        this.previewListElement.innerHTML = `
+          <div class="br-preview-list-empty">
+            До 10 карточек результатов будут показаны здесь.
+          </div>
+        `;
+        this.previewPageLabelElement.textContent = "0-0";
+        this.updatePreviewPager();
+        return;
+      }
+
+      this.syncPreviewPageToSelection();
+      const start = this.previewPageStart;
+      const end = Math.min(start + PREVIEW_PAGE_SIZE, this.results.length);
+      const items = this.results.slice(start, end);
+
+      this.previewListElement.innerHTML = items
+        .map((result, localIndex) => {
+          const actualIndex = start + localIndex;
+
+          return `
+            <button
+              class="br-preview-item${actualIndex === this.selectedIndex ? " is-selected" : ""}"
+              type="button"
+              data-index="${actualIndex}"
+            >
+              <div class="br-preview-item-type">${escapeHtml(TYPE_LABELS[result.type] || "Результат")}</div>
+              <div class="br-preview-item-title">${escapeHtml(result.title || "Без названия")}</div>
+              <div class="br-preview-item-url">${escapeHtml(shortenUrl(result.url || result.meta?.query || ""))}</div>
+            </button>
+          `;
+        })
+        .join("");
+
+      this.previewPageLabelElement.textContent = `${start + 1}-${end}`;
+      this.updatePreviewPager();
     }
 
     handleResultsClick(event) {
@@ -440,6 +522,21 @@
       this.selectedIndex = index;
       this.renderResults();
       this.openSelected(this.defaultDisposition());
+    }
+
+    handlePreviewListClick(event) {
+      const item = findIndexedResultElement(event.target);
+      if (!item) {
+        return;
+      }
+
+      const index = Number(item.getAttribute("data-index"));
+      if (Number.isNaN(index)) {
+        return;
+      }
+
+      this.selectedIndex = index;
+      this.renderResults();
     }
 
     handleResultsMouseMove(event) {
@@ -521,6 +618,26 @@
       }
     }
 
+    shiftPreviewPage(direction) {
+      if (!this.results.length) {
+        return;
+      }
+
+      const maxStart = Math.max(0, Math.floor((this.results.length - 1) / PREVIEW_PAGE_SIZE) * PREVIEW_PAGE_SIZE);
+      const nextStart = Math.min(
+        maxStart,
+        Math.max(0, this.previewPageStart + direction * PREVIEW_PAGE_SIZE)
+      );
+
+      if (nextStart === this.previewPageStart) {
+        return;
+      }
+
+      this.previewPageStart = nextStart;
+      this.selectedIndex = this.previewPageStart;
+      this.renderResults();
+    }
+
     async openSelected(disposition) {
       const selectedResult = this.results[this.selectedIndex];
       if (!selectedResult) {
@@ -556,7 +673,7 @@
       });
 
       if (!response || response.ok === false) {
-        this.summaryElement.textContent = response && response.error ? response.error : "Open action failed";
+        this.summaryElement.textContent = response && response.error ? response.error : "Не удалось открыть результат";
         return;
       }
 
@@ -572,7 +689,7 @@
       }
 
       const copied = await copyTextToClipboard(selectedResult.url, this.shadow);
-      this.summaryElement.textContent = copied ? "Link copied to clipboard" : "Copy failed";
+      this.summaryElement.textContent = copied ? "Ссылка скопирована" : "Не удалось скопировать ссылку";
     }
 
     defaultDisposition() {
@@ -581,7 +698,7 @@
 
     updateModeBadge(mode) {
       if (this.modeBadgeElement) {
-        this.modeBadgeElement.textContent = SOURCE_LABELS[sanitizeMode(mode)] || "All";
+        this.modeBadgeElement.textContent = SOURCE_LABELS[sanitizeMode(mode)] || "Все";
       }
     }
 
@@ -610,6 +727,40 @@
       }
 
       return this.cssTextPromise;
+    }
+
+    syncPreviewPageToSelection() {
+      if (this.selectedIndex < 0) {
+        this.previewPageStart = 0;
+        return;
+      }
+
+      const expectedStart = Math.floor(this.selectedIndex / PREVIEW_PAGE_SIZE) * PREVIEW_PAGE_SIZE;
+      if (expectedStart !== this.previewPageStart) {
+        this.previewPageStart = expectedStart;
+      }
+    }
+
+    updatePreviewPager() {
+      const hasPrevious = this.previewPageStart > 0;
+      const hasNext = this.previewPageStart + PREVIEW_PAGE_SIZE < this.results.length;
+
+      this.previewPrevButton.disabled = !hasPrevious;
+      this.previewNextButton.disabled = !hasNext;
+    }
+
+    formatResultCount(count) {
+      const lastDigit = count % 10;
+      const lastTwoDigits = count % 100;
+      let label = "результатов";
+
+      if (lastDigit === 1 && lastTwoDigits !== 11) {
+        label = "результат";
+      } else if ([2, 3, 4].includes(lastDigit) && ![12, 13, 14].includes(lastTwoDigits)) {
+        label = "результата";
+      }
+
+      return `${count} ${label}`;
     }
   }
 

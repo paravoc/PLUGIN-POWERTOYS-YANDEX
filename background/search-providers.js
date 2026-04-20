@@ -16,7 +16,7 @@
 
     return tabs
       .map((tab) => {
-        const title = tab.title || tab.url || "Untitled tab";
+        const title = tab.title || tab.url || "Без названия";
         const url = tab.url || "";
 
         if (!matchesQuery(normalizedQuery, title, url)) {
@@ -28,14 +28,14 @@
           type: "tab",
           title,
           url,
-          snippet: tab.active ? "Open tab in focused window" : "Open existing browser tab",
+          snippet: tab.active ? "Активная вкладка в текущем окне" : "Открыть уже существующую вкладку",
           icon: tab.favIconUrl || null,
           score: computeScore(normalizedQuery, title, url) + (tab.active ? 40 : 0),
           meta: {
             tabId: tab.id,
             windowId: tab.windowId,
             active: Boolean(tab.active),
-            sourceLabel: "Open tab"
+            sourceLabel: "Открытая вкладка"
           }
         };
       })
@@ -64,12 +64,12 @@
             type: "bookmark",
             title,
             url,
-            snippet: "Bookmark",
+            snippet: "Сохраненная закладка",
             icon: null,
             score: computeScore(normalizedQuery, title, url) + 10,
             meta: {
               bookmarkId: node.id,
-              sourceLabel: "Bookmark"
+              sourceLabel: "Закладка"
             }
           };
         })
@@ -93,7 +93,7 @@
 
       return items
         .map((item) => {
-          const title = item.title || item.url || "History entry";
+          const title = item.title || item.url || "Запись из истории";
           const url = item.url || "";
 
           if (!url || !matchesQuery(normalizedQuery, title, url)) {
@@ -109,13 +109,13 @@
             type: "history",
             title,
             url,
-            snippet: "Previously visited page",
+            snippet: "Страница, которую вы уже открывали",
             icon: null,
             score: computeScore(normalizedQuery, title, url) + visitBoost,
             meta: {
               lastVisitTime: item.lastVisitTime || 0,
               visitCount: item.visitCount || 0,
-              sourceLabel: "History"
+              sourceLabel: "История"
             }
           };
         })
@@ -137,13 +137,13 @@
       {
         id: `web:${query}`,
         type: "web",
-        title: `Search the web for "${query}"`,
+        title: `Искать в интернете: "${query}"`,
         url,
-        snippet: "Open external search results in the selected browser tab.",
+        snippet: "Открыть внешнюю поисковую выдачу в выбранной вкладке.",
         icon: null,
         score: 5,
         meta: {
-          sourceLabel: "Web search"
+          sourceLabel: "Веб-поиск"
         }
       }
     ];
@@ -160,11 +160,11 @@
       type: "direct",
       title: directMatch.title,
       url: directMatch.url,
-      snippet: "Open the typed address directly without searching first.",
+      snippet: "Открыть введенный адрес напрямую без промежуточного поиска.",
       icon: null,
       score: 500,
       meta: {
-        sourceLabel: "Direct navigation",
+        sourceLabel: "Прямой переход",
         explicitCommand: directMatch.explicit
       }
     };
