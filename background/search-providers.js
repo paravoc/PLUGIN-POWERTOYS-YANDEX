@@ -1,12 +1,15 @@
 (() => {
   const browserRun = globalThis.BrowserRun || (globalThis.BrowserRun = {});
-  const { DEFAULT_SETTINGS } = browserRun.constants;
+  const { DEFAULT_SETTINGS, TYPE_LABELS } = browserRun.constants;
   const {
     normalize,
     parseScopedQuery,
     parseDirectNavigation,
     matchesQuery,
-    computeScore
+    computeScore,
+    canonicalizeUrl,
+    getSiteLabel,
+    isTopicCandidateUrl
   } = browserRun.utils;
   const { getSettings } = browserRun.storage;
 
@@ -87,7 +90,7 @@
     try {
       const items = await chrome.history.search({
         text: query,
-        maxResults: 50,
+        maxResults: 80,
         startTime: 0
       });
 
@@ -170,7 +173,7 @@
     };
   }
 
-  async function searchAllSources(query, settings) {
+  async function searchLocalSources(query, settings) {
     const tasks = [];
 
     if (settings.enableTabsSearch) {
@@ -185,13 +188,51 @@
       tasks.push(searchHistory(query));
     }
 
-    const combined = (await Promise.all(tasks)).flat();
+    return (await Promise.all(tasks))
+      .flat()
+      .sort((left, right) => right.score - left.score);
+  }
 
-    if (settings.enableWebSearch) {
-      combined.push(...buildWebResults(query, settings));
+  function buildTopicResults(candidates) {
+    const byUrl = new Map();
+
+    for (const candidate of candidates) {
+      if (!candidate || !candidate.url || !isTopicCandidateUrl(candidate.url)) {
+        continue;
+      }
+
+      const key = canonicalizeUrl(candidate.url);
+      const sourceBoost = candidate.type === "tab" ? 25 : candidate.type === "history" ? 15 : 10;
+      const site = getSiteLabel(candidate.url);
+      const topicResult = {
+        id: `topic:${key}`,
+        type: "topic",
+        title: candidate.title || site || "Страница",
+        url: candidate.url,
+        snippet: candidate.snippet || "",
+        icon: candidate.icon || null,
+        score: candidate.score + sourceBoost,
+        meta: {
+          site,
+          sourceType: candidate.type,
+          sourceLabel: TYPE_LABELS[candidate.type] || candidate.meta?.sourceLabel || "Страница"
+        }
+      };
+
+      const existing = byUrl.get(key);
+      if (!existing || topicResult.score > existing.score) {
+        byUrl.set(key, topicResult);
+      }
     }
 
-    return combined.sort((left, right) => right.score - left.score);
+    return [...byUrl.values()]
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 10);
+  }
+
+  async function searchTopicPages(query, settings) {
+    const localCandidates = await searchLocalSources(query, settings);
+    return buildTopicResults(localCandidates);
   }
 
   async function searchEverywhere(rawInput) {
@@ -204,11 +245,13 @@
         ok: true,
         effectiveMode: parsed.mode,
         normalizedQuery: "",
-        results: []
+        results: [],
+        topicResults: []
       };
     }
 
     let results = [];
+    let topicResults = [];
 
     switch (parsed.mode) {
       case "tabs":
@@ -225,8 +268,12 @@
         break;
       case "all":
       default:
-        results = await searchAllSources(parsed.query, settings);
+        results = await searchLocalSources(parsed.query, settings);
         break;
+    }
+
+    if (parsed.mode !== "web") {
+      topicResults = await searchTopicPages(parsed.query, settings);
     }
 
     if (directResult && (parsed.mode === "all" || directResult.meta.explicitCommand)) {
@@ -237,7 +284,8 @@
       ok: true,
       effectiveMode: parsed.mode,
       normalizedQuery: parsed.query,
-      results: results.slice(0, 24)
+      results: results.slice(0, 24),
+      topicResults
     };
   }
 
@@ -247,7 +295,8 @@
     searchHistory,
     buildWebResults,
     buildDirectNavigationResult,
-    searchAllSources,
+    searchLocalSources,
+    searchTopicPages,
     searchEverywhere
   };
 })();

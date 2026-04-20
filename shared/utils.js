@@ -140,6 +140,96 @@
     }
   }
 
+  function getSiteLabel(url) {
+    if (!url) {
+      return "";
+    }
+
+    try {
+      return new URL(url).hostname.replace(/^www\./i, "");
+    } catch (_error) {
+      return url;
+    }
+  }
+
+  function canonicalizeUrl(url) {
+    try {
+      const parsed = new URL(url);
+      parsed.hash = "";
+      return parsed.toString();
+    } catch (_error) {
+      return String(url || "").trim();
+    }
+  }
+
+  function isBrowserInternalUrl(url) {
+    try {
+      const parsed = new URL(url);
+      return [
+        "chrome:",
+        "edge:",
+        "browser:",
+        "yandex:",
+        "about:",
+        "chrome-extension:"
+      ].includes(parsed.protocol);
+    } catch (_error) {
+      return true;
+    }
+  }
+
+  function isSearchEngineUrl(url) {
+    try {
+      const parsed = new URL(url);
+      const host = parsed.hostname.toLowerCase();
+      const path = parsed.pathname.toLowerCase();
+
+      if (host.includes("google.") && path.startsWith("/search")) {
+        return true;
+      }
+
+      if ((host === "yandex.ru" || host.endsWith(".yandex.ru") || host === "ya.ru") && path.startsWith("/search")) {
+        return true;
+      }
+
+      if (host.includes("bing.com") && path.startsWith("/search")) {
+        return true;
+      }
+
+      if (host.includes("duckduckgo.com") && ["/", "/html", "/lite/"].some((value) => path === value || path.startsWith(value))) {
+        return true;
+      }
+
+      if (host.includes("search.yahoo.com")) {
+        return true;
+      }
+
+      if (host.includes("rambler.ru") && path.startsWith("/search")) {
+        return true;
+      }
+
+      if (host.includes("mail.ru") && path.startsWith("/search")) {
+        return true;
+      }
+
+      return false;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function isTopicCandidateUrl(url) {
+    if (!url) {
+      return false;
+    }
+
+    if (isBrowserInternalUrl(url)) {
+      return false;
+    }
+
+    return !isSearchEngineUrl(url);
+  }
+
   function resolveTheme(theme) {
     if (theme === "light" || theme === "dark") {
       return theme;
@@ -162,6 +252,8 @@
         return "W";
       case "recent":
         return "R";
+      case "topic":
+        return "S";
       default:
         return "?";
     }
@@ -196,6 +288,11 @@
     matchesQuery,
     computeScore,
     shortenUrl,
+    getSiteLabel,
+    canonicalizeUrl,
+    isBrowserInternalUrl,
+    isSearchEngineUrl,
+    isTopicCandidateUrl,
     resolveTheme,
     getResultGlyph,
     escapeHtml,

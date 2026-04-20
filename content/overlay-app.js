@@ -5,6 +5,7 @@
     sanitizeMode,
     parseScopedQuery,
     shortenUrl,
+    getSiteLabel,
     resolveTheme,
     getResultGlyph,
     escapeHtml,
@@ -12,7 +13,6 @@
     findIndexedResultElement
   } = browserRun.utils;
   const { copyTextToClipboard } = browserRun.clipboard;
-  const PREVIEW_PAGE_SIZE = 10;
 
   class BrowserRunOverlay {
     constructor() {
@@ -22,17 +22,17 @@
       this.input = null;
       this.resultsElement = null;
       this.previewElement = null;
+      this.topicListElement = null;
+      this.topicSummaryElement = null;
       this.modeBadgeElement = null;
       this.summaryElement = null;
       this.closeButton = null;
       this.loadingElement = null;
-      this.previewListElement = null;
-      this.previewPageLabelElement = null;
-      this.previewPrevButton = null;
-      this.previewNextButton = null;
       this.results = [];
+      this.topicResults = [];
       this.selectedIndex = -1;
-      this.previewPageStart = 0;
+      this.topicSelectedIndex = -1;
+      this.activePane = "local";
       this.settings = { ...DEFAULT_SETTINGS };
       this.recentQueries = [];
       this.currentMode = this.settings.defaultSource;
@@ -45,8 +45,8 @@
       this.handleInputEvent = this.handleInputEvent.bind(this);
       this.handleInputKeyDown = this.handleInputKeyDown.bind(this);
       this.handleResultsClick = this.handleResultsClick.bind(this);
-      this.handlePreviewListClick = this.handlePreviewListClick.bind(this);
       this.handleResultsMouseMove = this.handleResultsMouseMove.bind(this);
+      this.handleTopicListClick = this.handleTopicListClick.bind(this);
       this.handleDocumentKeyDown = this.handleDocumentKeyDown.bind(this);
     }
 
@@ -95,17 +95,17 @@
       this.input = null;
       this.resultsElement = null;
       this.previewElement = null;
+      this.topicListElement = null;
+      this.topicSummaryElement = null;
       this.modeBadgeElement = null;
       this.summaryElement = null;
       this.closeButton = null;
       this.loadingElement = null;
-      this.previewListElement = null;
-      this.previewPageLabelElement = null;
-      this.previewPrevButton = null;
-      this.previewNextButton = null;
       this.results = [];
+      this.topicResults = [];
       this.selectedIndex = -1;
-      this.previewPageStart = 0;
+      this.topicSelectedIndex = -1;
+      this.activePane = "local";
     }
 
     mount(cssText) {
@@ -128,10 +128,8 @@
       this.input = this.shadow.querySelector("[data-role='search-input']");
       this.resultsElement = this.shadow.querySelector("[data-role='results']");
       this.previewElement = this.shadow.querySelector("[data-role='preview']");
-      this.previewListElement = this.shadow.querySelector("[data-role='preview-list']");
-      this.previewPageLabelElement = this.shadow.querySelector("[data-role='preview-page-label']");
-      this.previewPrevButton = this.shadow.querySelector("[data-role='preview-prev']");
-      this.previewNextButton = this.shadow.querySelector("[data-role='preview-next']");
+      this.topicListElement = this.shadow.querySelector("[data-role='topic-list']");
+      this.topicSummaryElement = this.shadow.querySelector("[data-role='topic-summary']");
       this.modeBadgeElement = this.shadow.querySelector("[data-role='mode-badge']");
       this.summaryElement = this.shadow.querySelector("[data-role='summary']");
       this.closeButton = this.shadow.querySelector("[data-role='close-button']");
@@ -142,20 +140,18 @@
       this.input.addEventListener("keydown", this.handleInputKeyDown);
       this.resultsElement.addEventListener("click", this.handleResultsClick);
       this.resultsElement.addEventListener("mousemove", this.handleResultsMouseMove);
-      this.previewListElement.addEventListener("click", this.handlePreviewListClick);
+      this.topicListElement.addEventListener("click", this.handleTopicListClick);
       this.closeButton.addEventListener("click", () => this.close());
       document.addEventListener("keydown", this.handleDocumentKeyDown, true);
-      this.previewPrevButton.addEventListener("click", () => this.shiftPreviewPage(-1));
-      this.previewNextButton.addEventListener("click", () => this.shiftPreviewPage(1));
 
       this.shadow.querySelector("[data-role='open-current']").addEventListener("click", () => {
-        this.openSelected(this.defaultDisposition());
+        this.openFocusedResult(this.defaultDisposition());
       });
       this.shadow.querySelector("[data-role='open-new']").addEventListener("click", () => {
-        this.openSelected("newForeground");
+        this.openFocusedResult("newForeground");
       });
       this.shadow.querySelector("[data-role='copy-link']").addEventListener("click", () => {
-        this.copySelectedLink();
+        this.copyFocusedLink();
       });
 
       this.updateModeBadge(this.settings.defaultSource);
@@ -171,7 +167,7 @@
                 <div class="br-brand-mark">BR</div>
                 <div class="br-brand-copy">
                   <div class="br-title">Browser Run</div>
-                  <div class="br-subtitle">Быстрый поиск по вкладкам, закладкам и истории</div>
+                  <div class="br-subtitle">Слева локальный поиск, справа страницы по теме</div>
                 </div>
                 <div class="br-mode-badge" data-role="mode-badge">Все</div>
               </div>
@@ -182,7 +178,7 @@
                   type="text"
                   spellcheck="false"
                   autocomplete="off"
-                  placeholder="Ищи что угодно... t:, b:, h:, w:, u:"
+                  placeholder="Ищи локально... t:, b:, h:, w:, u:"
                   aria-label="Поиск"
                 />
                 <button class="br-icon-button" data-role="close-button" type="button" aria-label="Закрыть окно">Esc</button>
@@ -192,23 +188,17 @@
             <div class="br-content">
               <section class="br-results-pane">
                 <div class="br-loading" data-role="loading" hidden>Идёт поиск...</div>
-                <div class="br-results" data-role="results" role="listbox" aria-label="Результаты поиска"></div>
+                <div class="br-results" data-role="results" role="listbox" aria-label="Локальные результаты"></div>
               </section>
 
               <aside class="br-preview-pane">
                 <div class="br-preview" data-role="preview"></div>
-                <section class="br-preview-gallery">
-                  <div class="br-preview-gallery-header">
-                    <div class="br-preview-gallery-copy">
-                      <div class="br-preview-gallery-title">Примеры страниц</div>
-                      <div class="br-preview-gallery-subtitle" data-role="preview-page-label">1-10</div>
-                    </div>
-                    <div class="br-preview-gallery-controls">
-                      <button class="br-icon-button br-preview-nav" data-role="preview-prev" type="button" aria-label="Предыдущие результаты">↑</button>
-                      <button class="br-icon-button br-preview-nav" data-role="preview-next" type="button" aria-label="Следующие результаты">↓</button>
-                    </div>
+                <section class="br-topic-pane">
+                  <div class="br-topic-header">
+                    <div class="br-topic-title">Страницы по теме</div>
+                    <div class="br-topic-subtitle" data-role="topic-summary">До 10 локальных страниц</div>
                   </div>
-                  <div class="br-preview-list" data-role="preview-list"></div>
+                  <div class="br-topic-list" data-role="topic-list"></div>
                 </section>
                 <div class="br-preview-actions">
                   <button class="br-action-button" data-role="open-current" type="button">Открыть</button>
@@ -221,9 +211,9 @@
             <footer class="br-footer">
               <div class="br-summary" data-role="summary">Готово</div>
               <div class="br-hints">
-                <span>Enter открыть</span>
+                <span>Enter открыть слева</span>
                 <span>Ctrl+Enter новая вкладка</span>
-                <span>Shift+Enter фон</span>
+                <span>Клик справа выбрать сайт</span>
                 <span>Esc закрыть</span>
               </div>
             </footer>
@@ -277,7 +267,9 @@
 
         if (!response || response.ok === false) {
           this.results = [];
+          this.topicResults = [];
           this.selectedIndex = -1;
+          this.topicSelectedIndex = -1;
           this.loadingElement.hidden = true;
           this.renderError(response && response.error ? response.error : "Не удалось выполнить поиск.");
           return;
@@ -289,8 +281,10 @@
         this.updateModeBadge(this.currentMode);
 
         this.results = Array.isArray(response.results) ? response.results : [];
+        this.topicResults = Array.isArray(response.topicResults) ? response.topicResults.slice(0, 10) : [];
         this.selectedIndex = this.results.length > 0 ? 0 : -1;
-        this.previewPageStart = 0;
+        this.topicSelectedIndex = this.topicResults.length > 0 ? 0 : -1;
+        this.activePane = this.results.length > 0 ? "local" : this.topicResults.length > 0 ? "topic" : "local";
         this.renderResults();
       } catch (error) {
         if (!this.isOpen || sequence !== this.searchSequence) {
@@ -299,13 +293,18 @@
 
         this.loadingElement.hidden = true;
         this.results = [];
+        this.topicResults = [];
         this.selectedIndex = -1;
+        this.topicSelectedIndex = -1;
         this.renderError(error instanceof Error ? error.message : "Не удалось выполнить поиск.");
       }
     }
 
     renderEmptyState() {
       this.loadingElement.hidden = true;
+      this.topicResults = [];
+      this.topicSelectedIndex = -1;
+      this.activePane = "local";
 
       if (this.settings.rememberQueries && this.recentQueries.length > 0) {
         this.results = this.recentQueries.map((query, index) => ({
@@ -321,7 +320,6 @@
             sourceLabel: "Недавний запрос"
           }
         }));
-        this.previewPageStart = 0;
         this.selectedIndex = 0;
         this.renderResults();
         return;
@@ -329,20 +327,19 @@
 
       this.results = [];
       this.selectedIndex = -1;
-      this.previewPageStart = 0;
       this.resultsElement.innerHTML = `
         <div class="br-state-card">
           <div class="br-state-title">Начните вводить запрос</div>
-          <div class="br-state-copy">Используйте <span>t:</span> для вкладок, <span>b:</span> для закладок, <span>h:</span> для истории, <span>w:</span> для веба, <span>u:</span> для прямой ссылки.</div>
+          <div class="br-state-copy">Слева появятся локальные результаты из вкладок, закладок и истории. Справа будут страницы по теме из браузера.</div>
         </div>
       `;
       this.previewElement.innerHTML = `
         <div class="br-preview-empty">
-          <div class="br-preview-title">Быстрый старт</div>
-          <div class="br-preview-copy">Первый результат выбирается автоматически. Используйте стрелки для навигации и Enter для открытия.</div>
+          <div class="br-preview-title">Локальный поиск</div>
+          <div class="br-preview-copy">Введите тему, например «коты». Слева будет локальный поиск, а справа — похожие страницы, которые уже встречались в браузере.</div>
         </div>
       `;
-      this.renderPreviewList();
+      this.renderTopicResults();
       this.summaryElement.textContent = "Начните ввод, чтобы искать по браузеру";
     }
 
@@ -356,10 +353,10 @@
       this.previewElement.innerHTML = `
         <div class="br-preview-empty">
           <div class="br-preview-title">Предпросмотр недоступен</div>
-          <div class="br-preview-copy">Проверьте разрешения или попробуйте другой запрос.</div>
+          <div class="br-preview-copy">Проверьте разрешения расширения и попробуйте другой запрос.</div>
         </div>
       `;
-      this.renderPreviewList();
+      this.renderTopicResults();
       this.summaryElement.textContent = "Ошибка поиска";
     }
 
@@ -367,28 +364,19 @@
       if (!this.results.length) {
         this.resultsElement.innerHTML = `
           <div class="br-state-card">
-            <div class="br-state-title">Ничего не найдено</div>
-            <div class="br-state-copy">Попробуйте другой запрос или смените префикс источника.</div>
+            <div class="br-state-title">Локально ничего не найдено</div>
+            <div class="br-state-copy">Попробуйте другой запрос или смените источник слева через префикс.</div>
           </div>
         `;
-        this.previewElement.innerHTML = `
-          <div class="br-preview-empty">
-            <div class="br-preview-title">Нет выбранного результата</div>
-            <div class="br-preview-copy">В текущем источнике нет совпадений.</div>
-          </div>
-        `;
-        this.renderPreviewList();
-        this.summaryElement.textContent = `Нет результатов: ${SOURCE_LABELS[this.currentMode] || "текущий источник"}`;
-        return;
+      } else {
+        this.resultsElement.innerHTML = this.results
+          .map((result, index) => this.renderResultItem(result, index, index === this.selectedIndex))
+          .join("");
       }
 
-      this.resultsElement.innerHTML = this.results
-        .map((result, index) => this.renderResultItem(result, index, index === this.selectedIndex))
-        .join("");
-
       this.renderPreview();
-      this.renderPreviewList();
-      this.summaryElement.textContent = `${this.formatResultCount(this.results.length)} в режиме «${SOURCE_LABELS[this.currentMode] || "Источник"}»`;
+      this.renderTopicResults();
+      this.summaryElement.textContent = `Слева: ${this.formatResultCount(this.results.length)}. Справа: ${this.formatResultCount(this.topicResults.length)}.`;
     }
 
     renderResultItem(result, index, isSelected) {
@@ -406,7 +394,7 @@
 
       return `
         <button
-          class="br-result-item${isSelected ? " is-selected" : ""}"
+          class="br-result-item${isSelected && this.activePane === "local" ? " is-selected" : ""}"
           type="button"
           role="option"
           aria-selected="${isSelected ? "true" : "false"}"
@@ -424,13 +412,13 @@
     }
 
     renderPreview() {
-      const result = this.results[this.selectedIndex];
+      const result = this.getFocusedResult();
 
       if (!result) {
         this.previewElement.innerHTML = `
           <div class="br-preview-empty">
             <div class="br-preview-title">Нет выбранного результата</div>
-            <div class="br-preview-copy">Перемещайтесь по списку стрелками вверх и вниз.</div>
+            <div class="br-preview-copy">Выберите элемент слева или страницу по теме справа.</div>
           </div>
         `;
         return;
@@ -452,12 +440,16 @@
         lines.push(result.meta.sourceLabel);
       }
 
+      if (result.meta && result.meta.site) {
+        lines.push(result.meta.site);
+      }
+
       this.previewElement.innerHTML = `
         <div class="br-preview-card">
           <div class="br-preview-type">${escapeHtml(TYPE_LABELS[result.type] || "Результат")}</div>
           <div class="br-preview-title">${escapeHtml(result.title || "Без названия")}</div>
           <div class="br-preview-url">${escapeHtml(shortenUrl(result.url || lines[0] || ""))}</div>
-          <div class="br-preview-copy">${escapeHtml(result.snippet || "Откройте результат выбранным действием.")}</div>
+          <div class="br-preview-copy">${escapeHtml(result.snippet || "Используйте кнопки ниже, чтобы открыть или скопировать ссылку.")}</div>
           <div class="br-preview-meta">
             ${lines.map((line) => `<span>${escapeHtml(line)}</span>`).join("")}
           </div>
@@ -465,47 +457,36 @@
       `;
     }
 
-    renderPreviewList() {
-      if (!this.previewListElement || !this.previewPageLabelElement) {
+    renderTopicResults() {
+      if (!this.topicListElement || !this.topicSummaryElement) {
         return;
       }
 
-      if (!this.results.length) {
-        this.previewListElement.innerHTML = `
-          <div class="br-preview-list-empty">
-            До 10 карточек результатов будут показаны здесь.
+      this.topicSummaryElement.textContent = this.topicResults.length > 0
+        ? `${this.formatResultCount(this.topicResults.length)} по теме`
+        : "Нет тематических страниц";
+
+      if (!this.topicResults.length) {
+        this.topicListElement.innerHTML = `
+          <div class="br-topic-empty">
+            По этому запросу в истории, вкладках и закладках пока нет тематических страниц.
           </div>
         `;
-        this.previewPageLabelElement.textContent = "0-0";
-        this.updatePreviewPager();
         return;
       }
 
-      this.syncPreviewPageToSelection();
-      const start = this.previewPageStart;
-      const end = Math.min(start + PREVIEW_PAGE_SIZE, this.results.length);
-      const items = this.results.slice(start, end);
-
-      this.previewListElement.innerHTML = items
-        .map((result, localIndex) => {
-          const actualIndex = start + localIndex;
-
-          return `
-            <button
-              class="br-preview-item${actualIndex === this.selectedIndex ? " is-selected" : ""}"
-              type="button"
-              data-index="${actualIndex}"
-            >
-              <div class="br-preview-item-type">${escapeHtml(TYPE_LABELS[result.type] || "Результат")}</div>
-              <div class="br-preview-item-title">${escapeHtml(result.title || "Без названия")}</div>
-              <div class="br-preview-item-url">${escapeHtml(shortenUrl(result.url || result.meta?.query || ""))}</div>
-            </button>
-          `;
-        })
+      this.topicListElement.innerHTML = this.topicResults
+        .map((result, index) => `
+          <button
+            class="br-topic-item${this.activePane === "topic" && index === this.topicSelectedIndex ? " is-selected" : ""}"
+            type="button"
+            data-index="${index}"
+          >
+            <div class="br-topic-item-title">${escapeHtml(result.title || "Без названия")}</div>
+            <div class="br-topic-item-site">${escapeHtml(result.meta?.site || getSiteLabel(result.url))}</div>
+          </button>
+        `)
         .join("");
-
-      this.previewPageLabelElement.textContent = `${start + 1}-${end}`;
-      this.updatePreviewPager();
     }
 
     handleResultsClick(event) {
@@ -519,24 +500,10 @@
         return;
       }
 
+      this.activePane = "local";
       this.selectedIndex = index;
       this.renderResults();
-      this.openSelected(this.defaultDisposition());
-    }
-
-    handlePreviewListClick(event) {
-      const item = findIndexedResultElement(event.target);
-      if (!item) {
-        return;
-      }
-
-      const index = Number(item.getAttribute("data-index"));
-      if (Number.isNaN(index)) {
-        return;
-      }
-
-      this.selectedIndex = index;
-      this.renderResults();
+      this.openLocalSelected(this.defaultDisposition());
     }
 
     handleResultsMouseMove(event) {
@@ -550,7 +517,24 @@
         return;
       }
 
+      this.activePane = "local";
       this.selectedIndex = index;
+      this.renderResults();
+    }
+
+    handleTopicListClick(event) {
+      const item = findIndexedResultElement(event.target);
+      if (!item) {
+        return;
+      }
+
+      const index = Number(item.getAttribute("data-index"));
+      if (Number.isNaN(index) || !this.topicResults[index]) {
+        return;
+      }
+
+      this.activePane = "topic";
+      this.topicSelectedIndex = index;
       this.renderResults();
     }
 
@@ -593,7 +577,7 @@
           disposition = "newBackground";
         }
 
-        await this.openSelected(disposition);
+        await this.openLocalSelected(disposition);
       }
     }
 
@@ -606,6 +590,7 @@
         ? 0
         : (this.selectedIndex + step + this.results.length) % this.results.length;
 
+      this.activePane = "local";
       this.selectedIndex = nextIndex;
       this.renderResults();
 
@@ -618,34 +603,31 @@
       }
     }
 
-    shiftPreviewPage(direction) {
-      if (!this.results.length) {
-        return;
-      }
-
-      const maxStart = Math.max(0, Math.floor((this.results.length - 1) / PREVIEW_PAGE_SIZE) * PREVIEW_PAGE_SIZE);
-      const nextStart = Math.min(
-        maxStart,
-        Math.max(0, this.previewPageStart + direction * PREVIEW_PAGE_SIZE)
-      );
-
-      if (nextStart === this.previewPageStart) {
-        return;
-      }
-
-      this.previewPageStart = nextStart;
-      this.selectedIndex = this.previewPageStart;
-      this.renderResults();
-    }
-
-    async openSelected(disposition) {
+    async openLocalSelected(disposition) {
       const selectedResult = this.results[this.selectedIndex];
       if (!selectedResult) {
         return;
       }
 
-      if (selectedResult.type === "recent") {
-        this.input.value = selectedResult.meta.query;
+      await this.openResultTarget(selectedResult, disposition);
+    }
+
+    async openFocusedResult(disposition) {
+      const result = this.getFocusedResult();
+      if (!result) {
+        return;
+      }
+
+      await this.openResultTarget(result, disposition);
+    }
+
+    async openResultTarget(result, disposition) {
+      if (!result) {
+        return;
+      }
+
+      if (result.type === "recent") {
+        this.input.value = result.meta.query;
         this.input.dispatchEvent(new Event("input", { bubbles: true }));
         this.input.focus();
         return;
@@ -668,7 +650,7 @@
 
       const response = await chrome.runtime.sendMessage({
         type: "OPEN_RESULT",
-        result: selectedResult,
+        result,
         disposition: effectiveDisposition
       });
 
@@ -682,14 +664,26 @@
       }
     }
 
-    async copySelectedLink() {
-      const selectedResult = this.results[this.selectedIndex];
-      if (!selectedResult || !selectedResult.url) {
+    async copyFocusedLink() {
+      const result = this.getFocusedResult();
+      if (!result || !result.url) {
         return;
       }
 
-      const copied = await copyTextToClipboard(selectedResult.url, this.shadow);
+      const copied = await copyTextToClipboard(result.url, this.shadow);
       this.summaryElement.textContent = copied ? "Ссылка скопирована" : "Не удалось скопировать ссылку";
+    }
+
+    getFocusedResult() {
+      if (this.activePane === "topic" && this.topicResults[this.topicSelectedIndex]) {
+        return this.topicResults[this.topicSelectedIndex];
+      }
+
+      if (this.results[this.selectedIndex]) {
+        return this.results[this.selectedIndex];
+      }
+
+      return this.topicResults[this.topicSelectedIndex] || null;
     }
 
     defaultDisposition() {
@@ -727,26 +721,6 @@
       }
 
       return this.cssTextPromise;
-    }
-
-    syncPreviewPageToSelection() {
-      if (this.selectedIndex < 0) {
-        this.previewPageStart = 0;
-        return;
-      }
-
-      const expectedStart = Math.floor(this.selectedIndex / PREVIEW_PAGE_SIZE) * PREVIEW_PAGE_SIZE;
-      if (expectedStart !== this.previewPageStart) {
-        this.previewPageStart = expectedStart;
-      }
-    }
-
-    updatePreviewPager() {
-      const hasPrevious = this.previewPageStart > 0;
-      const hasNext = this.previewPageStart + PREVIEW_PAGE_SIZE < this.results.length;
-
-      this.previewPrevButton.disabled = !hasPrevious;
-      this.previewNextButton.disabled = !hasNext;
     }
 
     formatResultCount(count) {
