@@ -1,16 +1,4 @@
-const DEFAULT_SETTINGS = {
-  defaultSource: "all",
-  enableTabsSearch: true,
-  enableBookmarksSearch: true,
-  enableHistorySearch: true,
-  enableWebSearch: true,
-  enterBehavior: "current-tab",
-  rememberQueries: true,
-  closeOnOpen: true,
-  theme: "auto",
-  maxRecentQueries: 20,
-  webSearchUrl: "https://yandex.ru/search/?text=%s"
-};
+const { DEFAULT_SETTINGS } = globalThis.BrowserRun.constants;
 
 const form = document.getElementById("settingsForm");
 const statusMessage = document.getElementById("statusMessage");

@@ -18,11 +18,14 @@ MVP-расширение для Яндекс Браузера и других Ch
 ```text
 manifest.json
 background.js
+background/
 content.js
+content/
 overlay.css
 options.html
 options.js
 README.md
+shared/
 ```
 
 ## Установка в режиме разработчика
@@ -60,16 +63,25 @@ README.md
 ## Архитектура
 
 - `background.js`
-  Слушает команду, при необходимости инжектит `content.js`, обрабатывает поиск по локальным источникам и выполняет открытие результата.
+  Bootstrap для service worker. Подключает модульные скрипты из папки `background/` и общие утилиты из `shared/`.
+
+- `background/`
+  Отдельные слои хранения настроек, search providers и runtime-логики открытия результатов.
 
 - `content.js`
-  Создает и удаляет overlay в Shadow DOM, управляет вводом, debounce-поиском, клавиатурной навигацией, preview и копированием ссылки.
+  Bootstrap для content overlay. Загружается последним после общих модулей и UI-класса.
+
+- `content/`
+  UI overlay, clipboard helper и логика отображения/навигации.
 
 - `overlay.css`
   Содержит стили overlay, анимации и адаптивное поведение.
 
 - `options.html` + `options.js`
   Страница настроек MVP: источники, тема, поведение `Enter`, сохранение запросов, web search template.
+
+- `shared/`
+  Общие константы и утилиты для background, content и options.
 
 ## Ограничения MVP
 
