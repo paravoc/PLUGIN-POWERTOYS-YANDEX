@@ -164,7 +164,8 @@
       icon: null,
       score: 500,
       meta: {
-        sourceLabel: "Direct navigation"
+        sourceLabel: "Direct navigation",
+        explicitCommand: directMatch.explicit
       }
     };
   }
@@ -228,7 +229,7 @@
         break;
     }
 
-    if (directResult && parsed.mode === "all") {
+    if (directResult && (parsed.mode === "all" || directResult.meta.explicitCommand)) {
       results = [directResult, ...results.filter((item) => item.url !== directResult.url)];
     }
 
