@@ -4,8 +4,13 @@
   const {
     sanitizeMode,
     parseScopedQuery,
+    normalize,
+    matchesQuery,
+    computeScore,
     shortenUrl,
     getSiteLabel,
+    canonicalizeUrl,
+    isSearchEngineUrl,
     resolveTheme,
     getResultGlyph,
     escapeHtml,
@@ -33,6 +38,7 @@
       this.selectedIndex = -1;
       this.topicSelectedIndex = -1;
       this.activePane = "local";
+      this.pageTopicCount = 0;
       this.settings = { ...DEFAULT_SETTINGS };
       this.recentQueries = [];
       this.currentMode = this.settings.defaultSource;
@@ -40,6 +46,8 @@
       this.searchTimer = null;
       this.searchSequence = 0;
       this.cssTextPromise = null;
+      this.lastActiveElement = null;
+      this.focusTimeouts = [];
 
       this.handleBackdropMouseDown = this.handleBackdropMouseDown.bind(this);
       this.handleInputEvent = this.handleInputEvent.bind(this);
@@ -48,6 +56,8 @@
       this.handleResultsMouseMove = this.handleResultsMouseMove.bind(this);
       this.handleTopicListClick = this.handleTopicListClick.bind(this);
       this.handleDocumentKeyDown = this.handleDocumentKeyDown.bind(this);
+      this.handleDocumentFocusIn = this.handleDocumentFocusIn.bind(this);
+      this.handleDocumentPaste = this.handleDocumentPaste.bind(this);
     }
 
     async toggle() {
@@ -60,18 +70,38 @@
     }
 
     async open() {
-      this.settings = await this.loadSettings();
-      this.recentQueries = this.settings.rememberQueries ? await this.getRecentQueries() : [];
-      this.currentMode = sanitizeMode(this.settings.defaultSource);
-      this.currentQuery = "";
-
-      const cssText = await this.loadCssText();
-      this.mount(cssText);
-      this.renderEmptyState();
+      if (this.isOpen) {
+        return;
+      }
 
       this.isOpen = true;
-      this.input.focus();
-      this.input.select();
+      this.lastActiveElement = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+
+      try {
+        const [settings, cssText] = await Promise.all([
+          this.loadSettings(),
+          this.loadCssText()
+        ]);
+
+        if (!this.isOpen) {
+          return;
+        }
+
+        this.settings = settings;
+        this.recentQueries = this.settings.rememberQueries ? await this.getRecentQueries() : [];
+        this.currentMode = sanitizeMode(this.settings.defaultSource);
+        this.currentQuery = "";
+
+        this.mount(cssText);
+        this.renderEmptyState();
+        this.focusInputSoon(true);
+      } catch (error) {
+        this.isOpen = false;
+        this.lastActiveElement = null;
+        throw error;
+      }
     }
 
     close() {
@@ -83,11 +113,22 @@
       clearTimeout(this.searchTimer);
       this.searchTimer = null;
       this.searchSequence += 1;
+      this.clearFocusTimers();
 
       document.removeEventListener("keydown", this.handleDocumentKeyDown, true);
+      document.removeEventListener("focusin", this.handleDocumentFocusIn, true);
+      document.removeEventListener("paste", this.handleDocumentPaste, true);
 
       if (this.host) {
         this.host.remove();
+      }
+
+      if (this.lastActiveElement && this.lastActiveElement.isConnected) {
+        try {
+          this.lastActiveElement.focus({ preventScroll: true });
+        } catch (_error) {
+          // Ignore focus restoration errors.
+        }
       }
 
       this.host = null;
@@ -106,6 +147,8 @@
       this.selectedIndex = -1;
       this.topicSelectedIndex = -1;
       this.activePane = "local";
+      this.pageTopicCount = 0;
+      this.lastActiveElement = null;
     }
 
     mount(cssText) {
@@ -142,7 +185,10 @@
       this.resultsElement.addEventListener("mousemove", this.handleResultsMouseMove);
       this.topicListElement.addEventListener("click", this.handleTopicListClick);
       this.closeButton.addEventListener("click", () => this.close());
+
       document.addEventListener("keydown", this.handleDocumentKeyDown, true);
+      document.addEventListener("focusin", this.handleDocumentFocusIn, true);
+      document.addEventListener("paste", this.handleDocumentPaste, true);
 
       this.shadow.querySelector("[data-role='open-current']").addEventListener("click", () => {
         this.openFocusedResult(this.defaultDisposition());
@@ -167,7 +213,7 @@
                 <div class="br-brand-mark">BR</div>
                 <div class="br-brand-copy">
                   <div class="br-title">Browser Run</div>
-                  <div class="br-subtitle">Слева локальный поиск, справа страницы по теме</div>
+                  <div class="br-subtitle">Слева локальный поиск, справа сайты по теме</div>
                 </div>
                 <div class="br-mode-badge" data-role="mode-badge">Все</div>
               </div>
@@ -195,8 +241,8 @@
                 <div class="br-preview" data-role="preview"></div>
                 <section class="br-topic-pane">
                   <div class="br-topic-header">
-                    <div class="br-topic-title">Страницы по теме</div>
-                    <div class="br-topic-subtitle" data-role="topic-summary">До 10 локальных страниц</div>
+                    <div class="br-topic-title">Сайты по теме</div>
+                    <div class="br-topic-subtitle" data-role="topic-summary">До 10 сайтов</div>
                   </div>
                   <div class="br-topic-list" data-role="topic-list"></div>
                 </section>
@@ -211,9 +257,9 @@
             <footer class="br-footer">
               <div class="br-summary" data-role="summary">Готово</div>
               <div class="br-hints">
-                <span>Enter открыть слева</span>
+                <span>Enter открыть</span>
                 <span>Ctrl+Enter новая вкладка</span>
-                <span>Клик справа выбрать сайт</span>
+                <span>Печать всегда идёт в поле поиска</span>
                 <span>Esc закрыть</span>
               </div>
             </footer>
@@ -268,6 +314,7 @@
         if (!response || response.ok === false) {
           this.results = [];
           this.topicResults = [];
+          this.pageTopicCount = 0;
           this.selectedIndex = -1;
           this.topicSelectedIndex = -1;
           this.loadingElement.hidden = true;
@@ -280,8 +327,13 @@
         this.currentQuery = response.normalizedQuery || "";
         this.updateModeBadge(this.currentMode);
 
-        this.results = Array.isArray(response.results) ? response.results : [];
-        this.topicResults = Array.isArray(response.topicResults) ? response.topicResults.slice(0, 10) : [];
+        const localResults = Array.isArray(response.results) ? response.results : [];
+        const fallbackTopicResults = Array.isArray(response.topicResults) ? response.topicResults.slice(0, 10) : [];
+        const pageTopicResults = this.collectPageTopicResults(this.currentQuery);
+
+        this.results = localResults;
+        this.pageTopicCount = pageTopicResults.length;
+        this.topicResults = this.mergeTopicResults(pageTopicResults, fallbackTopicResults);
         this.selectedIndex = this.results.length > 0 ? 0 : -1;
         this.topicSelectedIndex = this.topicResults.length > 0 ? 0 : -1;
         this.activePane = this.results.length > 0 ? "local" : this.topicResults.length > 0 ? "topic" : "local";
@@ -294,6 +346,7 @@
         this.loadingElement.hidden = true;
         this.results = [];
         this.topicResults = [];
+        this.pageTopicCount = 0;
         this.selectedIndex = -1;
         this.topicSelectedIndex = -1;
         this.renderError(error instanceof Error ? error.message : "Не удалось выполнить поиск.");
@@ -302,9 +355,13 @@
 
     renderEmptyState() {
       this.loadingElement.hidden = true;
-      this.topicResults = [];
-      this.topicSelectedIndex = -1;
+      this.pageTopicCount = 0;
       this.activePane = "local";
+
+      const pageTopicResults = this.collectPageTopicResults("");
+      this.topicResults = pageTopicResults.slice(0, 10);
+      this.topicSelectedIndex = this.topicResults.length > 0 ? 0 : -1;
+      this.pageTopicCount = this.topicResults.length;
 
       if (this.settings.rememberQueries && this.recentQueries.length > 0) {
         this.results = this.recentQueries.map((query, index) => ({
@@ -330,17 +387,19 @@
       this.resultsElement.innerHTML = `
         <div class="br-state-card">
           <div class="br-state-title">Начните вводить запрос</div>
-          <div class="br-state-copy">Слева появятся локальные результаты из вкладок, закладок и истории. Справа будут страницы по теме из браузера.</div>
+          <div class="br-state-copy">Слева появятся локальные результаты из вкладок, закладок и истории. Если вы на странице поисковой выдачи, справа появятся сайты с этой выдачи.</div>
         </div>
       `;
       this.previewElement.innerHTML = `
         <div class="br-preview-empty">
           <div class="br-preview-title">Локальный поиск</div>
-          <div class="br-preview-copy">Введите тему, например «коты». Слева будет локальный поиск, а справа — похожие страницы, которые уже встречались в браузере.</div>
+          <div class="br-preview-copy">Введите тему, например «коты». Печать и вставка будут попадать в поле плагина даже на Google и Yandex.</div>
         </div>
       `;
       this.renderTopicResults();
-      this.summaryElement.textContent = "Начните ввод, чтобы искать по браузеру";
+      this.summaryElement.textContent = this.topicResults.length > 0
+        ? "Справа показаны сайты с текущей поисковой страницы"
+        : "Начните ввод, чтобы искать по браузеру";
     }
 
     renderError(message) {
@@ -376,7 +435,7 @@
 
       this.renderPreview();
       this.renderTopicResults();
-      this.summaryElement.textContent = `Слева: ${this.formatResultCount(this.results.length)}. Справа: ${this.formatResultCount(this.topicResults.length)}.`;
+      this.summaryElement.textContent = `Слева: ${this.formatResultCount(this.results.length)}. Справа: ${this.describeTopicSummary()}.`;
     }
 
     renderResultItem(result, index, isSelected) {
@@ -418,7 +477,7 @@
         this.previewElement.innerHTML = `
           <div class="br-preview-empty">
             <div class="br-preview-title">Нет выбранного результата</div>
-            <div class="br-preview-copy">Выберите элемент слева или страницу по теме справа.</div>
+            <div class="br-preview-copy">Выберите элемент слева или сайт по теме справа.</div>
           </div>
         `;
         return;
@@ -462,15 +521,15 @@
         return;
       }
 
-      this.topicSummaryElement.textContent = this.topicResults.length > 0
-        ? `${this.formatResultCount(this.topicResults.length)} по теме`
-        : "Нет тематических страниц";
+      this.topicSummaryElement.textContent = this.describeTopicSummary();
 
       if (!this.topicResults.length) {
+        const emptyText = this.getCurrentSearchPageDescriptor()
+          ? "На текущей поисковой странице не нашлось подходящих сайтов по этому запросу."
+          : "Откройте поисковую выдачу или введите другой запрос, чтобы найти сайты по теме.";
+
         this.topicListElement.innerHTML = `
-          <div class="br-topic-empty">
-            По этому запросу в истории, вкладках и закладках пока нет тематических страниц.
-          </div>
+          <div class="br-topic-empty">${escapeHtml(emptyText)}</div>
         `;
         return;
       }
@@ -536,6 +595,7 @@
       this.activePane = "topic";
       this.topicSelectedIndex = index;
       this.renderResults();
+      this.focusInputSoon(false);
     }
 
     handleDocumentKeyDown(event) {
@@ -543,11 +603,86 @@
         return;
       }
 
+      const isSearchInputTarget = this.isEventTargetSearchInput(event);
+
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
         this.close();
+        return;
       }
+
+      if (event.key === "ArrowDown" && !isSearchInputTarget) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.moveSelection(1);
+        this.focusInputSoon(false);
+        return;
+      }
+
+      if (event.key === "ArrowUp" && !isSearchInputTarget) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.moveSelection(-1);
+        this.focusInputSoon(false);
+        return;
+      }
+
+      if (event.key === "Enter" && !isSearchInputTarget) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        let disposition = this.defaultDisposition();
+        if (event.ctrlKey || event.metaKey) {
+          disposition = "newForeground";
+        } else if (event.shiftKey) {
+          disposition = "newBackground";
+        }
+
+        this.openLocalSelected(disposition);
+        return;
+      }
+
+      if (event.key === "Tab" && !isSearchInputTarget) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.focusInputSoon(false);
+        return;
+      }
+
+      if (!isSearchInputTarget && this.captureInputKey(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }
+
+    handleDocumentFocusIn(event) {
+      if (!this.isOpen) {
+        return;
+      }
+
+      if (this.isEventInsideOverlay(event)) {
+        return;
+      }
+
+      this.focusInputSoon(false);
+    }
+
+    handleDocumentPaste(event) {
+      if (!this.isOpen || this.isEventTargetSearchInput(event)) {
+        return;
+      }
+
+      const text = event.clipboardData?.getData("text");
+      if (!text) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      this.insertTextAtCursor(text);
+      this.dispatchInputEvent();
+      this.focusInputSoon(false);
     }
 
     async handleInputKeyDown(event) {
@@ -557,18 +692,21 @@
 
       if (event.key === "ArrowDown") {
         event.preventDefault();
+        event.stopPropagation();
         this.moveSelection(1);
         return;
       }
 
       if (event.key === "ArrowUp") {
         event.preventDefault();
+        event.stopPropagation();
         this.moveSelection(-1);
         return;
       }
 
       if (event.key === "Enter") {
         event.preventDefault();
+        event.stopPropagation();
 
         let disposition = this.defaultDisposition();
         if (event.ctrlKey || event.metaKey) {
@@ -579,6 +717,35 @@
 
         await this.openLocalSelected(disposition);
       }
+    }
+
+    captureInputKey(event) {
+      if (!this.input || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) {
+        return false;
+      }
+
+      if (event.key === "Backspace") {
+        this.removeTextBeforeCursor();
+        this.dispatchInputEvent();
+        this.focusInputSoon(false);
+        return true;
+      }
+
+      if (event.key === "Delete") {
+        this.removeTextAfterCursor();
+        this.dispatchInputEvent();
+        this.focusInputSoon(false);
+        return true;
+      }
+
+      if (event.key === " " || event.key.length === 1) {
+        this.insertTextAtCursor(event.key);
+        this.dispatchInputEvent();
+        this.focusInputSoon(false);
+        return true;
+      }
+
+      return false;
     }
 
     moveSelection(step) {
@@ -604,7 +771,7 @@
     }
 
     async openLocalSelected(disposition) {
-      const selectedResult = this.results[this.selectedIndex];
+      const selectedResult = this.results[this.selectedIndex] || this.getFocusedResult();
       if (!selectedResult) {
         return;
       }
@@ -628,8 +795,8 @@
 
       if (result.type === "recent") {
         this.input.value = result.meta.query;
-        this.input.dispatchEvent(new Event("input", { bubbles: true }));
-        this.input.focus();
+        this.dispatchInputEvent();
+        this.focusInputSoon(true);
         return;
       }
 
@@ -721,6 +888,400 @@
       }
 
       return this.cssTextPromise;
+    }
+
+    clearFocusTimers() {
+      while (this.focusTimeouts.length > 0) {
+        clearTimeout(this.focusTimeouts.pop());
+      }
+    }
+
+    focusInputSoon(selectAll) {
+      if (!this.input) {
+        return;
+      }
+
+      this.focusInput(selectAll);
+      this.clearFocusTimers();
+
+      for (const delay of [0, 40, 120]) {
+        const timeoutId = window.setTimeout(() => {
+          this.focusInput(selectAll);
+        }, delay);
+        this.focusTimeouts.push(timeoutId);
+      }
+    }
+
+    focusInput(selectAll) {
+      if (!this.input || !this.isOpen) {
+        return;
+      }
+
+      try {
+        this.input.focus({ preventScroll: true });
+      } catch (_error) {
+        this.input.focus();
+      }
+
+      if (selectAll) {
+        this.input.select();
+      }
+    }
+
+    dispatchInputEvent() {
+      if (!this.input) {
+        return;
+      }
+
+      this.input.dispatchEvent(new Event("input", {
+        bubbles: true,
+        composed: true
+      }));
+    }
+
+    insertTextAtCursor(text) {
+      if (!this.input) {
+        return;
+      }
+
+      const selectionStart = this.input.selectionStart ?? this.input.value.length;
+      const selectionEnd = this.input.selectionEnd ?? selectionStart;
+      const nextValue = `${this.input.value.slice(0, selectionStart)}${text}${this.input.value.slice(selectionEnd)}`;
+      const nextCursor = selectionStart + text.length;
+
+      this.input.value = nextValue;
+      this.input.setSelectionRange(nextCursor, nextCursor);
+    }
+
+    removeTextBeforeCursor() {
+      if (!this.input) {
+        return;
+      }
+
+      const selectionStart = this.input.selectionStart ?? this.input.value.length;
+      const selectionEnd = this.input.selectionEnd ?? selectionStart;
+
+      if (selectionStart !== selectionEnd) {
+        this.input.value = `${this.input.value.slice(0, selectionStart)}${this.input.value.slice(selectionEnd)}`;
+        this.input.setSelectionRange(selectionStart, selectionStart);
+        return;
+      }
+
+      if (selectionStart <= 0) {
+        return;
+      }
+
+      this.input.value = `${this.input.value.slice(0, selectionStart - 1)}${this.input.value.slice(selectionStart)}`;
+      this.input.setSelectionRange(selectionStart - 1, selectionStart - 1);
+    }
+
+    removeTextAfterCursor() {
+      if (!this.input) {
+        return;
+      }
+
+      const selectionStart = this.input.selectionStart ?? this.input.value.length;
+      const selectionEnd = this.input.selectionEnd ?? selectionStart;
+
+      if (selectionStart !== selectionEnd) {
+        this.input.value = `${this.input.value.slice(0, selectionStart)}${this.input.value.slice(selectionEnd)}`;
+        this.input.setSelectionRange(selectionStart, selectionStart);
+        return;
+      }
+
+      if (selectionStart >= this.input.value.length) {
+        return;
+      }
+
+      this.input.value = `${this.input.value.slice(0, selectionStart)}${this.input.value.slice(selectionStart + 1)}`;
+      this.input.setSelectionRange(selectionStart, selectionStart);
+    }
+
+    isEventInsideOverlay(event) {
+      const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+      return path.includes(this.host) || path.includes(this.shadow);
+    }
+
+    isEventTargetSearchInput(event) {
+      const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+      return path.includes(this.input);
+    }
+
+    getCurrentSearchPageDescriptor() {
+      try {
+        const url = new URL(window.location.href);
+        const host = url.hostname.toLowerCase();
+        const path = url.pathname.toLowerCase();
+
+        if (host.includes("google.") && url.searchParams.has("q")) {
+          return {
+            provider: "google",
+            query: url.searchParams.get("q") || "",
+            rootSelector: "#search, main, [role='main']"
+          };
+        }
+
+        if ((host === "yandex.ru" || host.endsWith(".yandex.ru") || host === "ya.ru")
+          && (path.startsWith("/search") || url.searchParams.has("text"))) {
+          return {
+            provider: "yandex",
+            query: url.searchParams.get("text") || url.searchParams.get("query") || "",
+            rootSelector: "#search-result, main, [role='main'], .serp-list"
+          };
+        }
+
+        if (host.includes("bing.com") && url.searchParams.has("q")) {
+          return {
+            provider: "bing",
+            query: url.searchParams.get("q") || "",
+            rootSelector: "#b_results, main, [role='main']"
+          };
+        }
+
+        if (host.includes("duckduckgo.com") && url.searchParams.has("q")) {
+          return {
+            provider: "duckduckgo",
+            query: url.searchParams.get("q") || "",
+            rootSelector: "#links, main, [role='main']"
+          };
+        }
+
+        if (host.includes("search.yahoo.com") && url.searchParams.has("p")) {
+          return {
+            provider: "yahoo",
+            query: url.searchParams.get("p") || "",
+            rootSelector: "#web, main, [role='main']"
+          };
+        }
+
+        return null;
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    collectPageTopicResults(query) {
+      const descriptor = this.getCurrentSearchPageDescriptor();
+      if (!descriptor) {
+        return [];
+      }
+
+      const effectiveQuery = normalize(query || descriptor.query);
+      const root = this.findSearchResultsRoot(descriptor.rootSelector);
+      const anchors = [...root.querySelectorAll("a[href]")];
+      const results = [];
+      const seenUrls = new Set();
+
+      for (const anchor of anchors) {
+        if (!(anchor instanceof HTMLAnchorElement)) {
+          continue;
+        }
+
+        if (!this.isLikelySearchResultAnchor(anchor)) {
+          continue;
+        }
+
+        const targetUrl = this.resolveSearchResultUrl(anchor.href);
+        if (!targetUrl || isSearchEngineUrl(targetUrl)) {
+          continue;
+        }
+
+        const urlKey = canonicalizeUrl(targetUrl);
+        if (seenUrls.has(urlKey)) {
+          continue;
+        }
+
+        const title = this.extractSearchResultTitle(anchor);
+        if (!title || title.length < 3) {
+          continue;
+        }
+
+        const snippet = this.extractSearchResultSnippet(anchor, title);
+        const site = getSiteLabel(targetUrl);
+
+        if (effectiveQuery && !matchesQuery(effectiveQuery, `${title} ${snippet} ${site}`, targetUrl)) {
+          continue;
+        }
+
+        seenUrls.add(urlKey);
+        results.push({
+          id: `page-topic:${urlKey}`,
+          type: "topic",
+          title,
+          url: targetUrl,
+          snippet,
+          icon: null,
+          score: computeScore(effectiveQuery, `${title} ${snippet}`, `${site} ${targetUrl}`) + Math.max(0, 120 - results.length * 10),
+          meta: {
+            site,
+            sourceType: "page-search",
+            sourceLabel: "Текущая выдача"
+          }
+        });
+
+        if (results.length >= 10) {
+          break;
+        }
+      }
+
+      return results;
+    }
+
+    findSearchResultsRoot(rootSelector) {
+      if (!rootSelector) {
+        return document.body;
+      }
+
+      const selectors = rootSelector.split(",").map((item) => item.trim()).filter(Boolean);
+      for (const selector of selectors) {
+        const element = document.querySelector(selector);
+        if (element) {
+          return element;
+        }
+      }
+
+      return document.body;
+    }
+
+    isLikelySearchResultAnchor(anchor) {
+      if (!anchor.href || anchor.offsetParent === null) {
+        return false;
+      }
+
+      if (anchor.closest("header, nav, footer, aside, [role='navigation'], [aria-label*='navigation'], [aria-label*='Навига']")) {
+        return false;
+      }
+
+      const normalizedHref = this.resolveSearchResultUrl(anchor.href);
+      if (!normalizedHref || !/^https?:\/\//i.test(normalizedHref)) {
+        return false;
+      }
+
+      const title = this.extractSearchResultTitle(anchor);
+      if (title && title.length >= 8) {
+        return true;
+      }
+
+      const text = this.compactText(anchor.textContent);
+      return text.length >= 18 && text.length <= 180;
+    }
+
+    resolveSearchResultUrl(rawHref) {
+      try {
+        const parsed = new URL(rawHref, window.location.href);
+
+        for (const paramName of ["q", "url", "u", "uddg", "target", "to"]) {
+          const rawTarget = parsed.searchParams.get(paramName);
+          if (!rawTarget) {
+            continue;
+          }
+
+          const decodedTarget = decodeURIComponent(rawTarget);
+          if (/^https?:\/\//i.test(decodedTarget)) {
+            return decodedTarget;
+          }
+        }
+
+        if (!["http:", "https:"].includes(parsed.protocol)) {
+          return "";
+        }
+
+        if (parsed.hostname.toLowerCase() === window.location.hostname.toLowerCase()) {
+          return "";
+        }
+
+        return parsed.toString();
+      } catch (_error) {
+        return "";
+      }
+    }
+
+    extractSearchResultTitle(anchor) {
+      const titleCandidate = anchor.querySelector("h1, h2, h3, h4, h5, h6");
+      const candidates = [
+        titleCandidate ? titleCandidate.textContent : "",
+        anchor.getAttribute("aria-label"),
+        anchor.textContent,
+        anchor.title
+      ];
+
+      for (const candidate of candidates) {
+        const text = this.compactText(candidate);
+        if (text.length >= 3 && text.length <= 220) {
+          return text;
+        }
+      }
+
+      return "";
+    }
+
+    extractSearchResultSnippet(anchor, title) {
+      const container = anchor.closest("article, li, .serp-item, .organic, .result, .b_algo, .links_main");
+      const rawText = this.compactText(
+        container?.innerText
+        || container?.textContent
+        || anchor.parentElement?.innerText
+        || anchor.parentElement?.textContent
+        || ""
+      );
+
+      if (!rawText) {
+        return "";
+      }
+
+      let snippet = rawText;
+      if (title) {
+        snippet = snippet.replace(title, "").trim();
+      }
+
+      return snippet.length > 220 ? `${snippet.slice(0, 217)}...` : snippet;
+    }
+
+    mergeTopicResults(primaryResults, fallbackResults) {
+      const merged = [];
+      const seenUrls = new Set();
+
+      for (const result of [...primaryResults, ...fallbackResults]) {
+        if (!result || !result.url) {
+          continue;
+        }
+
+        const urlKey = canonicalizeUrl(result.url);
+        if (seenUrls.has(urlKey)) {
+          continue;
+        }
+
+        seenUrls.add(urlKey);
+        merged.push(result);
+
+        if (merged.length >= 10) {
+          break;
+        }
+      }
+
+      return merged;
+    }
+
+    compactText(value) {
+      return String(value || "").replace(/\s+/g, " ").trim();
+    }
+
+    describeTopicSummary() {
+      if (!this.topicResults.length) {
+        return this.getCurrentSearchPageDescriptor()
+          ? "0 сайтов из текущей выдачи"
+          : "0 сайтов";
+      }
+
+      if (this.pageTopicCount > 0 && this.topicResults.length > this.pageTopicCount) {
+        return `${this.topicResults.length} сайтов: выдача + браузер`;
+      }
+
+      if (this.pageTopicCount > 0) {
+        return `${this.topicResults.length} сайтов из текущей выдачи`;
+      }
+
+      return `${this.topicResults.length} сайтов из браузера`;
     }
 
     formatResultCount(count) {

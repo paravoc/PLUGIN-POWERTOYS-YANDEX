@@ -23,6 +23,14 @@
     }
   });
 
+  chrome.action.onClicked.addListener(async (tab) => {
+    try {
+      await toggleOverlayOnTab(tab);
+    } catch (error) {
+      console.warn("Browser Run: action click failed.", error);
+    }
+  });
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     handleMessage(message, sender)
       .then((response) => sendResponse(response))
@@ -74,16 +82,24 @@
       currentWindow: true
     });
 
-    if (!activeTab || typeof activeTab.id !== "number") {
+    if (!activeTab) {
       return;
     }
 
-    const injected = await ensureContentScript(activeTab.id);
+    await toggleOverlayOnTab(activeTab);
+  }
+
+  async function toggleOverlayOnTab(tab) {
+    if (!tab || typeof tab.id !== "number") {
+      return;
+    }
+
+    const injected = await ensureContentScript(tab.id);
     if (!injected) {
       return;
     }
 
-    await chrome.tabs.sendMessage(activeTab.id, {
+    await chrome.tabs.sendMessage(tab.id, {
       type: "TOGGLE_OVERLAY"
     });
   }
@@ -118,10 +134,10 @@
     const senderTabId = sender && sender.tab ? sender.tab.id : null;
 
     if (
-      result.type === "tab" &&
-      targetDisposition === "current" &&
-      result.meta &&
-      typeof result.meta.tabId === "number"
+      result.type === "tab"
+      && targetDisposition === "current"
+      && result.meta
+      && typeof result.meta.tabId === "number"
     ) {
       await chrome.tabs.update(result.meta.tabId, { active: true });
 
